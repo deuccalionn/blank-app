@@ -5,70 +5,62 @@ import google.generativeai as genai
 st.set_page_config(page_title="Vatandaş Dili Çevirmeni", page_icon="⚖️")
 
 st.title("⚖️ Vatandaş Dili Çevirmeni")
-st.write("Resmi evrakları yapıştır, senin için sadeleştirelim.")
+st.write("Aşağıdan çalışan modeli kendin seç ve metni sadeleştir.")
 
-# API Anahtarı
+# 1. API Anahtarı Girişi
 api_key = st.text_input("Google API Anahtarını Gir:", type="password")
-user_input = st.text_area("Metni buraya yapıştır:", height=150)
 
-def get_model_and_generate(api_key, prompt):
-    """Bu fonksiyon doğru modeli bulana kadar dener."""
-    genai.configure(api_key=api_key)
-    
-    # Denenecek Modeller Listesi (Sırasıyla)
-    model_list = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro-latest']
-    
-    last_error = ""
-    
-    for model_name in model_list:
-        try:
-            # Modeli dene
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            return response.text, model_name # Başarılı olursa sonucu ve model adını döndür
-        except Exception as e:
-            # Hata alırsan kaydet ve sonraki modele geç
-            last_error = e
-            continue
-            
-    # Listettekiler çalışmazsa, sistemdeki rastgele bir modeli dene
+# 2. Model Listesini Getir (Otomatik)
+selected_model = None
+if api_key:
     try:
+        genai.configure(api_key=api_key)
+        
+        # Google'dan "Metin üretebilen" modelleri istiyoruz
+        model_list = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                model = genai.GenerativeModel(m.name)
-                response = model.generate_content(prompt)
-                return response.text, m.name
-    except:
-        pass
+                model_list.append(m.name)
+        
+        if model_list:
+            st.success(f"✅ Bağlantı Başarılı! {len(model_list)} adet model bulundu.")
+            # Kullanıcıya listeden seçtiriyoruz
+            selected_model = st.selectbox("Kullanılacak Yapay Zekayı Seç:", model_list)
+        else:
+            st.error("⚠️ Anahtar doğru ama hiç model bulunamadı. Yeni bir API anahtarı almayı dene.")
+            
+    except Exception as e:
+        st.error(f"API Anahtarı Hatası: {e}")
 
-    # Hiçbiri çalışmazsa hatayı fırlat
-    raise Exception(f"Hiçbir model çalışmadı. Son hata: {last_error}")
+# 3. Metin Girişi ve İşlem
+user_input = st.text_area("Sadeleştirilecek Metni Yapıştır:", height=150)
 
 if st.button("Sadeleştir"):
     if not api_key:
-        st.error("Lütfen API anahtarını gir.")
+        st.error("Önce API anahtarı girmelisin.")
+    elif not selected_model:
+        st.error("Bir model seçmelisin.")
     elif not user_input:
-        st.warning("Metin girmelisin.")
+        st.warning("Metin boş olamaz.")
     else:
         try:
-            with st.spinner('Yapay zeka uygun modeli bulup analiz ediyor...'):
-                
+            # Seçilen modeli kullanıyoruz
+            model = genai.GenerativeModel(selected_model)
+            
+            with st.spinner(f'{selected_model} düşünüyor...'):
                 prompt = f"""
-                Sen uzman bir hukukçusun. Bu metni halk diline çevir.
+                Sen uzman bir hukukçusun. Bu metni herkesin anlayacağı dilde özetle.
                 Format:
-                1. ÖZET (Tek cümle)
-                2. RİSKLER (Varsa kırmızı uyarı ile)
+                1. ÖZET
+                2. RİSKLER (Varsa)
                 3. TAVSİYE
                 
                 Metin: {user_input}
                 """
-                
-                # Fonksiyonu çağır
-                result_text, used_model = get_model_and_generate(api_key, prompt)
-                
-                st.success(f"✅ İşlem Başarılı! (Kullanılan Model: {used_model})")
+                response = model.generate_content(prompt)
                 st.markdown("### 📝 Sonuç:")
-                st.markdown(result_text)
+                st.markdown(response.text)
                 
         except Exception as e:
-            st.error(f"Üzgünüm, bir hata oluştu: {e}")
+            st.error(f"Seçilen model ({selected_model}) hata verdi: {e}")
+            st.info("💡 İpucu: Yukarıdaki kutudan 'gemini-1.5-flash' veya 'gemini-pro' içeren başka bir model seçip tekrar dene.")
