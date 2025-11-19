@@ -22,8 +22,11 @@ if st.button("Bunu Benim İçin Sadeleştir"):
         st.warning("Lütfen bir metin yapıştır.")
     else:
         try:
+            # Yapay Zeka Ayarları
             genai.configure(api_key=api_key)
-           model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # MODELİ BURADA SEÇİYORUZ (Hizalaması düzeltildi)
+            model = genai.GenerativeModel('gemini-1.5-flash')
             
             with st.spinner('Yapay zeka metni inceliyor...'):
                 prompt = f"""
