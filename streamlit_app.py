@@ -1,125 +1,104 @@
 import streamlit as st
 import google.generativeai as genai
-import io
 from PIL import Image
 
 # Sayfa Ayarları
 st.set_page_config(page_title="Vatandaş Dili Çevirmeni", page_icon="⚖️")
 
 st.title("⚖️ Vatandaş Dili Çevirmeni")
-st.write("Sadeleştirmek istediğin hukuki metni veya fotoğrafını yükle.")
+st.write("Metni yapıştır veya fotoğrafını çek, sadeleştirelim.")
 
-# 1. API Anahtarı Girişi
+# 1. API Anahtarı
 api_key = st.text_input("Google API Anahtarını Gir:", type="password")
 
-# 2. Model Listesini Getir (Otomatik ve Kullanıcı Seçimi)
+# 2. Model Seçimi (Filtresiz - Özgür Mod)
 selected_model = None
-vision_model_name = None # Görsel işleme için ayrı model adı
 if api_key:
     try:
         genai.configure(api_key=api_key)
         
-        text_models = []
-        vision_models = [] # Görsel işleme yapabilen modeller
-        
+        # Tüm metin üretebilen modelleri getiriyoruz (Ayrım yapmaksızın)
+        model_list = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                if 'vision' in m.name: # Görsel yeteneği olan modelleri bul
-                    vision_models.append(m.name)
-                else:
-                    text_models.append(m.name)
+                model_list.append(m.name)
         
-        if text_models:
-            st.success(f"✅ Bağlantı Başarılı! {len(text_models)} adet metin modeli bulundu.")
-            selected_model = st.selectbox("Metin İşleme için Yapay Zekayı Seç:", text_models, index=text_models.index('gemini-1.5-flash') if 'gemini-1.5-flash' in text_models else 0)
-        else:
-            st.error("⚠️ Anahtar doğru ama hiç metin işleme modeli bulunamadı.")
+        if model_list:
+            st.success(f"✅ {len(model_list)} adet model bulundu.")
+            # Listeden "flash" içerenleri öne çıkarmaya çalışalım, yoksa ilkini seçelim
+            default_index = 0
+            for i, m_name in enumerate(model_list):
+                if 'flash' in m_name and '1.5' in m_name:
+                    default_index = i
+                    break
             
-        if vision_models:
-            # Görsel için varsayılan olarak en popülerini seçiyoruz
-            vision_model_name = 'gemini-pro-vision' if 'gemini-pro-vision' in vision_models else vision_models[0]
-            st.info(f"📸 Görsel işleme için '{vision_model_name}' modeli kullanılacak.")
-
-            # Test amaçlı manuel seçim de eklenebilir
-            # vision_model_name = st.selectbox("Görsel İşleme için Yapay Zekayı Seç:", vision_models) # Debug için
+            selected_model = st.selectbox("Kullanılacak Yapay Zekayı Seç:", model_list, index=default_index)
+            st.caption("💡 İpucu: 'gemini-1.5-flash' veya 'gemini-2.5' gibi modeller hem metin hem fotoğraf okuyabilir.")
         else:
-            st.warning("Görsel işleme yapabilen model bulunamadı. Fotoğraf yükleme çalışmayabilir.")
+            st.error("⚠️ Hiç model bulunamadı. API anahtarını kontrol et.")
             
     except Exception as e:
-        st.error(f"API Anahtarı veya Model Listeleme Hatası: {e}")
+        st.error(f"Bağlantı Hatası: {e}")
 
-# 3. Metin veya Fotoğraf Girişi (Tablar ile)
+# 3. Sekmeler (Metin vs Fotoğraf)
 tab1, tab2 = st.tabs(["📄 Metin Yapıştır", "📸 Fotoğraf Yükle"])
 
 user_input = ""
 uploaded_file = None
+input_type = "text" # Hangi modu kullandığımızı takip etmek için
 
 with tab1:
-    user_input = st.text_area("Sadeleştirilecek Metni Buraya Yapıştır:", height=150)
+    user_input = st.text_area("Sözleşme metnini buraya yapıştır:", height=150)
+    if user_input:
+        input_type = "text"
 
 with tab2:
-    uploaded_file = st.file_uploader("Evrak veya sözleşmenin fotoğrafını/PDF'ini yükle:", type=["jpg", "png", "jpeg", "pdf"])
+    uploaded_file = st.file_uploader("Sözleşme fotoğrafını yükle:", type=["jpg", "png", "jpeg"])
+    if uploaded_file:
+        input_type = "image"
+        st.image(uploaded_file, caption="Yüklenen Belge", width=300)
 
 # 4. Sadeleştir Butonu
-if st.button("Sadeleştir"):
-    if not api_key:
-        st.error("Önce API anahtarını girmelisin.")
-    elif not selected_model:
-        st.error("Bir metin işleme modeli seçmelisin.")
+if st.button("Analiz Et ve Sadeleştir"):
+    if not api_key or not selected_model:
+        st.error("Lütfen API anahtarı gir ve bir model seç.")
     elif not user_input and not uploaded_file:
-        st.warning("Lütfen metin yapıştır veya bir dosya yükle.")
+        st.warning("Lütfen metin veya fotoğraf yükle.")
     else:
         try:
-            processed_content = ""
+            model = genai.GenerativeModel(selected_model)
             
-            with st.spinner(f'İçerik analiz ediliyor...'):
-                if uploaded_file:
-                    if uploaded_file.type == "application/pdf":
-                        st.info("PDF dosyaları için OCR şu an doğrudan desteklenmiyor. Lütfen PDF'i görsel olarak kaydetmeyi dene.")
-                        # PDF için farklı bir yaklaşıma ihtiyaç var (gelecek aşamalarda bakılabilir)
-                        st.stop()
-                    else:
-                        # Görsel işleme kısmı
-                        if not vision_model_name:
-                            st.error("Görsel işleme yapabilen bir model bulunamadı.")
-                            st.stop()
-                            
-                        # Resmi Image objesine dönüştür
-                        image = Image.open(uploaded_file)
-                        
-                        st.info(f"📸 Fotoğraf '{vision_model_name}' modeli ile okunuyor...")
-                        vision_model = genai.GenerativeModel(vision_model_name)
-                        
-                        # Görseldeki metni alma prompt'u
-                        vision_prompt = "Bu görseldeki tüm yazıları, paragraf yapılarını ve önemli detayları eksiksiz bir şekilde metin olarak çıkar. Formatlama kurallarına uy."
-                        
-                        image_response = vision_model.generate_content([vision_prompt, image])
-                        processed_content = image_response.text
-                        st.text_area("Okunan Metin (Kontrol edebilirsin):", processed_content, height=150)
-                        if not processed_content.strip():
-                            st.error("Görselden metin çıkarılamadı veya çok az metin bulundu. Daha net bir fotoğraf dene.")
-                            st.stop()
-                else:
-                    processed_content = user_input # Metin sekmesinden gelen içerik
-
-                # Şimdi bu metni sadeleştirme modeli ile işleyelim
-                model = genai.GenerativeModel(selected_model)
+            with st.spinner('Yapay zeka avukatınız inceliyor...'):
                 
-                final_prompt = f"""
-                Sen uzman bir hukukçusun. Bu metni herkesin anlayacağı dilde özetle.
-                Format:
-                1. ÖZET
-                2. RİSKLER (Varsa, madde madde ve kırmızı uyarı gibi)
-                3. TAVSİYE (Ne yapması gerektiği hakkında kısa öneri)
+                # Ortak Prompt (İstek)
+                base_prompt = """
+                Sen uzman bir hukukçusun. Bu içeriği analiz et.
+                Lütfen şu formatta çıktı ver:
+                1. 📄 ÖZET: Bu belge ne hakkında? (Tek cümle)
+                2. ⚠️ RİSKLER: İmzalamadan önce dikkat edilmesi gereken tehlikeli maddeler.
+                3. ✅ TAVSİYE: Ne yapmalıyım?
                 
-                Metin: {processed_content}
+                Analiz edilecek içerik aşağıdadır:
                 """
                 
-                response = model.generate_content(final_prompt)
+                response = None
                 
-                st.markdown("### 📝 Sonuç:")
+                # Duruma göre işlem yap
+                if input_type == "image" and uploaded_file:
+                    # Görseli aç
+                    image = Image.open(uploaded_file)
+                    # Prompt + Görseli aynı anda gönderiyoruz (Yeni modeller bunu sever)
+                    response = model.generate_content([base_prompt, image])
+                else:
+                    # Sadece metin gönderiyoruz
+                    response = model.generate_content(base_prompt + user_input)
+                
+                # Sonucu Yazdır
+                st.markdown("---")
+                st.success("İşlem Tamamlandı!")
                 st.markdown(response.text)
                 
         except Exception as e:
-            st.error(f"İşlem Hatası: {e}")
-            st.info("💡 İpucu: Model listelemede veya seçimde bir hata olmuş olabilir. Sayfayı yenileyip tekrar dene.")
+            st.error(f"Bir hata oluştu: {e}")
+            if "image" in str(e) or "vision" in str(e) or "support" in str(e):
+                st.warning("⚠️ Seçtiğin model fotoğraf desteklemiyor olabilir. Lütfen yukarıdan 'gemini-1.5-flash' veya 'pro' içeren başka bir model seçip tekrar dene.")
