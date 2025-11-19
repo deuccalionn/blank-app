@@ -10,14 +10,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- GİZLİ ANAHTARI ALMA (OTOMATİK) ---
-# Önce Streamlit kasasına bakıyoruz, yoksa hata veriyoruz.
+# --- GİZLİ ANAHTARI ALMA ---
 try:
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
     else:
-        # Eğer secrets ayarlanmamışsa (Localde çalışıyorsan)
-        st.error("Sistem Hatası: API Anahtarı bulunamadı. Lütfen 'Secrets' ayarlarını kontrol edin.")
+        st.error("Sistem Hatası: API Anahtarı bulunamadı. Secrets ayarlarını kontrol et.")
         st.stop()
 except Exception as e:
     st.error(f"Anahtar okuma hatası: {e}")
@@ -31,27 +29,35 @@ with st.sidebar:
     
     st.divider()
     
-    # Model Seçimi (Gelişmiş Ayar - Gizli gibi dursun)
-    with st.expander("⚙️ Teknik Ayarlar"):
+    # GÜVENLİ MODEL SEÇİMİ (FİLTRELİ)
+    with st.expander("⚙️ Model Ayarı", expanded=True): # Açık gelsin ki kullanıcı görsün
         selected_model = None
         try:
             genai.configure(api_key=api_key)
             model_list = []
+            
+            # BURASI YENİ: Sadece güvenli modelleri listele
             for m in genai.list_models():
                 if 'generateContent' in m.supported_generation_methods:
-                    model_list.append(m.name)
+                    # 'exp' (deneysel) olanları VE 'vision' olmayan eski modelleri ele
+                    # Sadece kararlı (1.5) sürümleri al
+                    if 'exp' not in m.name and '1.5' in m.name:
+                        model_list.append(m.name)
             
-            # Otomatik olarak en iyi modeli seçmeye çalış
+            # Listeyi bulamazsa manuel ekle (Garanti Yöntem)
+            if not model_list:
+                model_list = ['gemini-1.5-flash', 'gemini-1.5-pro']
+
+            # En hızlısı (Flash) varsayılan olsun
             default_idx = 0
             for i, m_name in enumerate(model_list):
-                if 'flash' in m_name and '1.5' in m_name:
+                if 'flash' in m_name:
                     default_idx = i
                     break
             
-            if model_list:
-                selected_model = st.selectbox("Yapay Zeka Modeli:", model_list, index=default_idx)
-            else:
-                st.error("Model listesi alınamadı.")
+            selected_model = st.selectbox("Yapay Zeka:", model_list, index=default_idx)
+            st.caption("✅ Sadece ücretsiz kotası olan modeller listeleniyor.")
+            
         except Exception as e:
             st.error(f"Bağlantı hatası: {e}")
 
@@ -59,15 +65,12 @@ with st.sidebar:
     **Nasıl Kullanılır?**
     1. Sözleşmenin fotoğrafını çek veya metni yapıştır.
     2. 'Analiz Et' butonuna bas.
-    3. Arkanı yaslan, avukatın okusun.
     """)
-    
-    st.caption("v1.2 - Public Release")
 
 # --- ANA EKRAN ---
 st.title("⚖️ Vatandaş Dili Çevirmeni")
 st.markdown("""
-**Hoş Geldiniz.** Karmaşık hukuk dilinden, okunmayan sözleşmelerden kurtulun. 
+**Hoş Geldiniz.** Karmaşık hukuk dilinden kurtulun. 
 Resmi evrakları yükleyin; **sizin dilinize, riskleri vurgulayarak çevirelim.**
 """)
 
@@ -78,7 +81,7 @@ uploaded_file = None
 input_type = "text"
 
 with tab1:
-    user_input = st.text_area("Metni buraya yapıştırın:", height=200, placeholder="Örn: Kiracı, mecuru tahliye ederken boya badana yapmak zorundadır...")
+    user_input = st.text_area("Metni buraya yapıştırın:", height=200, placeholder="Örn: Kiracı, mecuru tahliye ederken...")
 
 with tab2:
     uploaded_file = st.file_uploader("Belge fotoğrafı yükleyin", type=["jpg", "png", "jpeg"])
@@ -115,15 +118,17 @@ if st.button("🚀 Analiz Et ve Sadeleştir", type="primary"):
                     response = model.generate_content(base_prompt + user_input)
                 
                 # SONUÇLARI GÖSTER
-                st.balloons() # İşlem bitince balonlar uçsun :)
                 st.success("Analiz Tamamlandı!")
                 st.markdown("---")
                 st.markdown(response.text)
                 
         except Exception as e:
-            st.error(f"Beklenmedik bir hata oluştu: {e}")
-            st.info("Eğer görsel yüklediyseniz, daha net bir fotoğraf çekmeyi deneyin.")
+            # Hata mesajını daha anlaşılır hale getirelim
+            if "429" in str(e):
+                st.error("⚠️ Çok hızlı işlem yaptınız veya ücretsiz kota doldu. Lütfen 30 saniye bekleyip tekrar deneyin.")
+            else:
+                st.error(f"Hata: {e}")
 
 # Footer
 st.markdown("---")
-st.warning("⚠️ **Yasal Uyarı:** Bu sonuçlar yapay zeka tarafından üretilmiştir ve hukuki tavsiye yerine geçmez. Resmi işlemlerde mutlaka avukata danışınız.")
+st.warning("⚠️ **Yasal Uyarı:** Bu sonuçlar yapay zeka tarafından üretilmiştir ve hukuki tavsiye yerine geçmez.")
