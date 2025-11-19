@@ -1,50 +1,37 @@
 import streamlit as st
 import google.generativeai as genai
+import sys
 
-# Sayfa Ayarları
-st.set_page_config(page_title="Vatandaş Dili Çevirmeni", page_icon="⚖️")
+st.title("🔍 Hata Dedektifi")
 
-# Başlık
-st.title("⚖️ Vatandaş Dili Çevirmeni")
-st.write("Sadeleştirmek istediğin hukuki metni yapıştır.")
-
-# API Anahtarı
-api_key = st.text_input("Google API Anahtarını Gir:", type="password")
-
-# Giriş Alanı
-user_input = st.text_area("Metni buraya yapıştır:", height=150)
-
-if st.button("Sadeleştir"):
-    if not api_key:
-        st.error("Lütfen API anahtarını gir.")
-    elif not user_input:
-        st.warning("Metin girmelisin.")
+# 1. Kütüphane Versiyonunu Kontrol Et
+try:
+    version = genai.__version__
+    st.info(f"Yüklü Olan Kütüphane Sürümü: {version}")
+    
+    # Eğer sürüm 0.8.3'ten küçükse sorun buradadır!
+    if version < "0.8.3":
+        st.error("❌ HATA BULUNDU: Kütüphane çok eski! requirements.txt dosyan okunmuyor.")
     else:
-        try:
-            genai.configure(api_key=api_key)
+        st.success("✅ Kütüphane sürümü güncel.")
+except:
+    st.warning("Versiyon okunamadı.")
+
+# 2. API Anahtarı Testi
+api_key = st.text_input("API Anahtarını Yapıştır (Sonunda boşluk olmasın!)", type="password")
+
+if api_key:
+    try:
+        genai.configure(api_key=api_key)
+        st.write("Modeller aranıyor...")
+        
+        # Google'a bağlanıp hangi modelleri verdiğine bakalım
+        found_any = False
+        for m in genai.list_models():
+            st.write(f"- {m.name}")
+            found_any = True
             
-            # DİREKT HEDEF: En stabil ve ücretsiz model
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
-            with st.spinner('Yapay zeka inceliyor...'):
-                prompt = f"""
-                Sen uzman bir hukukçusun. Bu metni halk diline çevir.
-                Format:
-                1. ÖZET (Tek cümle)
-                2. RİSKLER (Varsa kırmızı uyarı ile)
-                3. TAVSİYE
-                
-                Metin: {user_input}
-                """
-                response = model.generate_content(prompt)
-                st.markdown("### 📝 Sonuç:")
-                st.markdown(response.text)
-                
-        except Exception as e:
-            # Hata mesajını güzelleştiriyoruz
-            if "404" in str(e):
-                st.error("Hata: Model bulunamadı. Lütfen requirements.txt dosyanda 'google-generativeai>=0.8.3' yazdığından emin ol.")
-            elif "429" in str(e):
-                st.error("Hata: Çok fazla istek gönderildi veya kota doldu. Biraz bekle.")
-            else:
-                st.error(f"Bir hata oluştu: {e}")
+        if not found_any:
+            st.error("⚠️ Bağlantı kuruldu ama hiç model bulunamadı. API Key hatalı olabilir.")
+    except Exception as e:
+        st.error(f"💥 Büyük Hata: {e}")
